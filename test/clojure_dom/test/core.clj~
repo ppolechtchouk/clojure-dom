@@ -27,18 +27,14 @@
 (deftest test-text-node
   (testing "Creating text nodes"
     (is (valid? (text-node "blah")))
-    (is (valid? (text-node nil)))
     (is (= "blah2" (:text (text-node "blah2"))))
-    (is (= "3" (:text (text-node 3))))
-    (is (= "" (:text (text-node nil))))))
+    (is (nil? (text-node 3)))))
 
 (deftest test-comment-node
   (testing "Creating comment nodes"
     (is (valid? (comment-node "blah")))
-    (is (valid? (comment-node nil)))
     (is (= "blah2" (:comment (comment-node "blah2"))))
-    (is (= "4" (:comment (comment-node 4))))
-    (is (= "" (:comment (comment-node nil))))))
+    (is (nil? (comment-node 3)))))
 
 (deftest test-element-node
   (testing "Creating element nodes"
@@ -59,23 +55,13 @@
       (is (= :test3 (:element (element-node :test3 {:a "blah"}))))
       (is (= :test (:element (element-node "test" :a "blah" :b "b" :c "test2"))))
       (is (= :test (:element (element-node :test :a "blah" :b "b" :c "test2")))))
-
     (testing "element attributes"
-      (is (= "blah" (attribute (element-node "test2" {:a "blah"}) :a)))
-      (is (nil? (:attributes (element-node :test nil))))
-      (is (nil? (:attributes (element-node :test {}))))
-      (is (nil? (attribute (element-node "test2" {:a "blah"}) :ba)))
-      (is (= 3 (count (:attributes (element-node :test :a "blah" :b "b" :c "test2")))))
-      (is (= "blah" (attribute (element-node :test :a "blah" :b "b" :c "test2") :a)))
-      (is (= "b" (attribute (element-node :test :a "blah" :b "b" :c "test2") :b)))
-      (is (= "test2" (attribute (element-node :test :a "blah" :b "b" :c "test2") :c))))
-    
+      (is false) ;TODO
+      )
     (testing "invalid nodes"
-      (is (thrown? Exception (element-node nil)))
-      (is (thrown? Exception (element-node 10)))
-      (is (thrown? Exception (element-node :elem :a 1 :b)))
-      (is (thrown? Exception (element-node :blah [:a 1]))))
-    )) ; end test-element-node
+      (is false) ;TODO
+      )
+    ))
 
 (deftest test-dom-root
   (testing "DOM creation and root node."
@@ -96,11 +82,11 @@
 
 (deftest test-add-child
   (testing "add-child function"
-   (let [n1 (element-node :root)
-	 n2 (element-node :n2)
-	 n3 (element-node :n3)
-	 n4 (comment-node "comment")
-	 n5 (text-node "text")]
+   (let [n1 (clojure-dom.core.Node. nil nil :root nil)
+	 n2 (clojure-dom.core.Node. nil nil :n2 nil)
+	 n3 (clojure-dom.core.Node. nil nil :n3 nil)
+	 n4 (clojure-dom.core.Node. "comment" nil nil nil)
+	 n5 (clojure-dom.core.Node. nil "text" nil nil)]
      
      (testing "single child"
        (let [dom (add-child (create-dom n1) n1 n4)]
@@ -122,6 +108,7 @@
 
      (testing "illegal child"
        (is (thrown? Exception (-> (create-dom n1) (add-child n1 n2) (add-child n1 n1))))
+       (is (thrown? Exception (-> (create-dom n1) (add-child n1 n2) (add-child n1 n2))))
        (is (thrown? Exception (-> (create-dom n1) (add-child n1 nil))))
        (is (thrown? Exception (-> (create-dom n1) (add-child n1 "blah")))))
 
@@ -145,50 +132,8 @@
 	 (is (= 3 (count (child-nodes dom n2))))
 	 (is (= n3 (first (child-nodes dom n2))))
 	 (is (= n4 (second (child-nodes dom n2))))
-	 (is (= n5 (last (child-nodes dom n2))))))
-
-     (testing "moving a node by adding it to another parent"
-       (let [dom (-> (create-dom n1) (add-child n1 n2)
-		     (add-child n2 n3) (add-child n3 n4) (add-child n3 n5))]
-	 (testing "moving a single node"
-	   (is (= n5 (-> dom (add-child n2 n5) (last-child n2))))
-	   (is (= n2 (-> dom (add-child n2 n5) (parent n5))))
-	   (is (= n3 (-> dom (add-child n2 n5) (previous-sibling n5))))
-	   (is (= n5 (-> dom (add-child n2 n5) (next-sibling n3))))
-	   (is (= n4 (-> dom (add-child n2 n5) (first-child n3))))
-	   (is (= n4 (-> dom (add-child n2 n5) (last-child n3))))
-	   (is (nil? (-> dom (add-child n2 n5) (previous-sibling n4))))
-	   (is (nil? (-> dom (add-child n2 n5) (next-sibling n4))))
-	   )	 
-	 (testing "moving a node with children"
-	   (is (= n3 (-> dom (add-child n1 n3) (last-child n1))))
-	   (is (= n1 (-> dom (add-child n1 n3) (parent n3))))
-	   (is (= n2 (-> dom (add-child n1 n3) (previous-sibling n3))))
-	   (is (= n3 (-> dom (add-child n1 n3) (next-sibling n2))))
-	   (is (= n3 (-> dom (add-child n1 n3) (parent n4))))
-	   (is (= n3 (-> dom (add-child n1 n3) (parent n5))))
-	   (is (nil? (-> dom (add-child n1 n3) (first-child n2))))
-	   (is (nil? (-> dom (add-child n1 n3) (last-child n2))))
-	   )
-	  (testing "moving a node without changing the parent"
-	   (is (= n5 (-> dom (add-child n3 n5) (last-child n3))))
-	   (is (= n3 (-> dom (add-child n3 n5) (parent n5))))
-	   (is (= n4 (-> dom (add-child n3 n5) (previous-sibling n5))))
-	   (is (= n5 (-> dom (add-child n3 n5) (next-sibling n4))))
-	   (is (nil? (-> dom (add-child n3 n5) (next-sibling n5))))
-	   
-	   (is (= n5 (-> dom (add-child n3 n4) (first-child n3))))
-	   (is (= n4 (-> dom (add-child n3 n4) (last-child n3))))
-	   (is (nil? (-> dom (add-child n3 n4) (previous-sibling n5))))
-	   (is (= n4 (-> dom (add-child n3 n4) (next-sibling n5))))	   
-	   (is (nil? (-> dom (add-child n3 n4) (next-sibling n4))))
-	   (is (= n5 (-> dom (add-child n3 n4) (previous-sibling n4))))
-	   )
-	 (testing "moving illegal nodes"
-	   (is (thrown? Exception (add-child dom n3 n1)))
-	   (is (thrown? Exception (add-child dom n3 n2)))
-	   (is (thrown? Exception (add-child dom n3 n3)))))))
-     ))
+	 (is (= n5 (last (child-nodes dom n2))))))     
+     )))
 					; end test-add-child
 
 (deftest test-insert-after

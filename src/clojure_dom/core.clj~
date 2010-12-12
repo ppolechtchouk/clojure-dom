@@ -1,11 +1,42 @@
 (ns clojure-dom.core
   (:use clojure.test))
 
+(def *keywords* (agent 
+		 (hash-map)
+		 :meta {:doc "Hash-map of {string :string} used for keyword creation optimisation"}))
+
+(defn update-keywords
+  "Adds a new keyword to the *keywords* map, based on the value of string s. Returns a keyword based on s"
+  [s]
+  (let [k (keyword s)]
+   (send *keywords* assoc s k)
+   k))
+
+(defn to-keyword
+  "Optimised version of the keyword function that uses *keywords*. Returns an :s keyword"
+  [s]
+  (let [kw (get @*keywords* s)]
+    (if kw
+      kw
+      (update-keywords s))))
 
 
 (defprotocol Validation
   "Functions that test node and dom internal consistency"
   (valid? [x] "Returns true if x is valid. x can be either a Node or Dom."))
+
+(defn verify-attributes
+  "Returns true if attribute map is valid - i.e. a map with keyword keys"
+  [am]
+  (and
+   (map? am)
+   (not (empty? am)) ; should use nil instead of empty map
+   (every? keyword? (keys am)))) ; note that the value of the attribute can be anything
+
+(defprotocol AttributeManagement
+  "Functions that provide access and 'modification' of the attributes of the element nodes."
+  (attribute [this atr] "Returns the value of the atr attribute or nil if none. Throws an exception if not used with an element node.")
+  (delete-attr [this atr & attrs] "Returns a new element node with the specified attributes removed from the attributes map."))
 
 (defrecord Node
     [comment text element attributes]
@@ -15,17 +46,20 @@
 	   (cond
 	    
 	    comment
-	    (or text element attributes)
+	    (or text element attributes (not (string? comment)))
 	    
 	    text
-	    (or comment element attributes)
+	    (or comment element attributes (not (string? text)))
 
-	    attributes
-	    (or (not element) text comment (not map? attributes))
+	    attributes ; plus element
+	    (or (not element) text comment (not (verify-attributes attributes)))
 	    
-	    element
-	    (or comment text (not (keyword? element)))))
-	  ) ; end valid?
+	    element ; no attributes
+	    (or comment text (not (keyword? element)))
+
+	    :default
+	    true ; i.e. not valid
+	    ))) ; end valid?
   ) ; end Node
 
 (defprotocol DomAccess
@@ -159,115 +193,29 @@
 	 )
     (throw (Exception. (str "Node " n  " is not a valid root node."))))))
 
-(deftest test-node-valid?
-  (testing "Node validation"  
-    (testing "valid nodes"
-     (is (valid? (Node. "blah" nil nil nil)))
-     (is (valid? (Node. nil "balh" nil nil)))
-     (is (valid? (Node. nil nil :test nil)))
-     (is (valid? (Node. nil nil :node {:name "blah"}))))
+(defn text-node
+  "Returns a text node that contains the given string. "
+  [s]
+  (let [n (Node. nil s  nil nil)]
+    (if (valid? n) n)))
 
-    (testing "invalid nodes"
-      (is (not (valid? (Node. "test" nil :test nil))))
-      (is (not (valid? (Node. nil "blah" :test nil))))
-      (is (not (valid? (Node. "balh" "test" nil nil))))
-      (is (not (valid? (Node. nil nil "element" nil))))
-      (is (not (valid? (Node. "test" nil nil {:attr "blah"}))))
-      (is (not (valid? (Node. nil "blah" nil {:attr "blah"}))))
-      (is (not (valid? (Node. nil nil nil {:attr "blah"}))))
-      (is (not (valid? (Node. nil nil :test [:attr "bla"]))))
-      (is (not (valid? (Node. nil nil :element "attributes")))))
-    )) ; end test-node-valid?
+(defn comment-node
+  "Returns a comment node that contains the given string."
+  [#^String s]
+  (let [n (Node. s nil nil nil)]
+    (if (valid? n) n)))
 
-(deftest test-dom-root
-  (testing "DOM creation and root node."
-   (let [n1 (Node. nil nil :test nil)
-	 n2 (Node. "comment" nil nil nil)
-	 n3 (Node. nil "text" nil nil)]
+(defn element-node
+  "Returns an element node based on the. el is the element name as a keyword or a string. at-map is a map of the attributes.If the resulting element node is not valid, nil is returned."
+  ([el] (element-node el nil))
+  ([el at-map]
+     (let [k (if (keyword? el) el (to-keyword el))
+	   n (Node. nil nil k at-map)]
+       (if (valid? n) n)))
+  ([el atr val & keyvals] (element-node el (conj (hash-map atr val) (apply hash-map keyvals)))))
 
-     (testing "root node association" 
-       (is (= n1 (:root (create-dom n1))))
-       (is (belongs? (create-dom n1) n1)))
+
+
+
      
-     (testing "illegal root nodes"
-       (is (thrown? Exception (create-dom n2)))
-       (is (thrown? Exception (create-dom n3)))
-       (is (thrown? Exception (create-dom nil))))
-     ))) ; end test-dom-root
 
-(deftest test-add-child
-  (testing "add-child function"
-   (let [n1 (Node. nil nil :root nil)
-	 n2 (Node. nil nil :n2 nil)
-	 n3 (Node. nil nil :n3 nil)
-	 n4 (Node. "comment" nil nil nil)
-	 n5 (Node. nil "text" nil nil)]
-     
-     (testing "single child"
-       (let [dom (add-child (create-dom n1) n1 n4)]
-	 (is (= n1 (:root dom)))
-	 (is (= n1 (parent dom n4)))
-	 (is (= n4 (first-child dom n1)))
-	 (is (= n4 (last-child dom n1)))))
-     
-     (testing "in depth"
-       (let [dom (add-child (add-child (create-dom n1) n1 n2) n2 n3)]
-	 (is (= n1 (parent dom n2)))
-	 (is (= n2 (parent dom n3)))
-	 (is (= n2 (first-child dom n1)))
-	 (is (= n3 (first-child dom n2)))))
-
-     (testing "illegal parent"
-       (is (thrown? Exception (add-child (create-dom n1) n2 n3)))
-       (is (thrown? Exception (add-child (create-dom n1) nil n3))))
-
-     (testing "illegal child"
-       (is (thrown? Exception (-> (create-dom n1) (add-child n1 n2) (add-child n1 n1))))
-       (is (thrown? Exception (-> (create-dom n1) (add-child n1 n2) (add-child n1 n2))))
-       (is (thrown? Exception (-> (create-dom n1) (add-child n1 nil))))
-       (is (thrown? Exception (-> (create-dom n1) (add-child n1 "blah")))))
-
-     (testing "multiple child nodes for a root"
-       (let [root n2
-	     dom (-> (create-dom root) (add-child root n1) (add-child root n3))]
-	 (is (= root (parent dom n1)))
-	 (is (= root (parent dom n3)))
-	 (is (= n1 (first-child dom root)))
-	 (is (= n3 (last-child dom root)))
-	 (is (= 2 (count (child-nodes dom root))))))
-
-     (testing "multiple child nodes"
-       (let [dom (-> (create-dom n1) (add-child n1 n2)
-		     (add-child n2 n3) (add-child n2 n4) (add-child n2 n5))]
-	 (is (= n2 (parent dom n3)))
-	 (is (= n2 (parent dom n4)))
-	 (is (= n2 (parent dom n5)))
-	 (is (= n3 (first-child dom n2)))
-	 (is (= n5 (last-child dom n2)))
-	 (is (= 3 (count (child-nodes dom n2))))
-	 (is (= n3 (first (child-nodes dom n2))))
-	 (is (= n4 (second (child-nodes dom n2))))
-	 (is (= n5 (last (child-nodes dom n2))))))     
-     ))) ; end test-add-child
-     
-(deftest test-insert-after
-  (testing "Testing insert-after function"
-    (let [n1 (Node. nil nil :root nil)
-	  n2 (Node. nil nil :n2 nil)
-	  n3 (Node. nil nil :n3 nil)
-	  n4 (Node. "comment" nil nil nil)
-	  n5 (Node. nil "text" nil nil)]
-
-      (testing "illegal node"
-	(is (thrown? Exception (-> (create-dom n1) (add-child n1 n2) (insert-after n1 n3))))
-	(is (thrown? Exception (-> (create-dom n1) (add-child n1 n2) (insert-after n3 n4))))
-	(is (thrown? Exception (-> (create-dom n1) (add-child n1 n2) (insert-after nil n3))))
-	(is (thrown? Exception (-> (create-dom n1)
-				   (add-child n1 n2) (add-child n2 n3) (add-child n3 n4)
-				   (insert-after n4 n2))))
-	(is (thrown? Exception (-> (create-dom n1)
-				   (add-child n1 n2) (add-child n2 n3) (add-child n3 n4)
-				   (insert-after n4 n1))))
-	(is (thrown? Exception (-> (create-dom n1) (add-child n1 n2) (insert-after n2 nil))))
-	(is (thrown? Exception (-> (create-dom n1) (add-child n1 n2) (insert-after n2 {})))))
-      ))) ; end test-insert-after 
