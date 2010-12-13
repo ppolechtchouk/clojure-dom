@@ -1,0 +1,215 @@
+(ns clojure-dom.core
+  (:use clojure.test))
+
+(def *keywords* (agent 
+		 (hash-map)
+		 :meta {:doc "Hash-map of {string :string} used for keyword creation optimisation"}))
+
+(defn update-keywords
+  "Adds a new keyword to the *keywords* map, based on the value of string s. Returns a keyword based on s"
+  [s]
+  (let [k (keyword s)]
+   (send *keywords* assoc s k)
+   k))
+
+(defn to-keyword
+  "Optimised version of the keyword function that uses *keywords*. Returns an :s keyword"
+  [s]
+  (let [kw (get @*keywords* s)]
+    (if kw
+      kw
+      (update-keywords s))))
+
+
+(defprotocol Validation
+  "Functions that test node and dom internal consistency"
+  (valid? [x] "Returns true if x is valid. x can be either a Node or Dom."))
+
+(defn verify-attributes
+  "Returns true if attribute map is valid"
+  [am]
+  (and
+   (map? am)
+   (every? keyword? (keys am))
+   (every? string? (vals am))))
+
+(defrecord Node
+    [comment text element attributes]
+  Validation
+  (valid? [this]
+	  (not
+	   (cond
+	    
+	    comment
+	    (or text element attributes (not (string? comment)))
+	    
+	    text
+	    (or comment element attributes (not (string? text)))
+
+	    attributes
+	    (or (not element) text comment (not (verify-attributes attributes)))
+	    
+	    element
+	    (or comment text (not (keyword? element)))
+
+	    :default
+	    true ; i.e. not valid
+	    ))) ; end valid?
+  ) ; end Node
+
+(defprotocol DomAccess
+  "Various functions for accessing DOM structure."
+  (belongs? [dom n] "Returns true if node is present in the dom.")
+  (parent [dom n] "Returns the parent node of n or nil if none")
+  (parent-nodes [dom n] "Returns a sequence of parent nodes of n, starting from the immediate parent and all the way up to the root node")
+  (next-sibling [dom n] "Retuns the next sibling node or nil if none")
+  (previous-sibling [dom n] "Retuns the next sibling node or nil if none")
+  (first-child [dom n] "Returns the first child of the node, or nil if none")
+  (last-child [dom n] "Returns the last child of the node, or nil if none")
+  (child-nodes [dom n] "Returns a sequence of the child nodes.")
+  )
+
+(defprotocol DomModification
+  "Various functions for creating a new DOM instance with a modified structure."
+
+  (add-child [dom np nc] "Returns a new DOM with the child node (nc) added to the parent node (np). Note that nc will be the last child of np if np already has children. Throws an exception if np is not a valid parent node or nc already belongs to the DOM.")
+  (insert-after [dom n1 n2] "Returns a new DOM with n2 as the next sibling of n1. If n2 is already part of the DOM structure, it will be moved to a new location. n1 can not be a root node and must belong to the DOM otherwise an exception is thrown. n2 can not be one of the parent nodes of n1.")
+)
+
+(defn verify-parent
+  "Returns true if n is a valid parent node - i.e. element node and belongs to the DOM"
+  [dom n]
+  (and
+   (= (class n) Node)
+   (:element n)
+   (belongs? dom n)))
+
+(defrecord Dom 
+    [root parent-map first-child-map last-child-map previous-sibling-map next-sibling-map nodes-set]
+  DomAccess
+  (belongs? [dom n]
+	    (contains? nodes-set n))
+  (parent [dom n] (parent-map n))
+  (parent-nodes [dom n]
+	    (take-while #(not (nil? %)) (iterate parent-map n)))
+  (next-sibling [dom n]
+		(next-sibling-map n))
+  (previous-sibling [dom n]
+		    (previous-sibling-map n))
+  (first-child [dom n]
+	       (first-child-map n))
+  (last-child [dom n]
+	       (last-child-map n))
+  (child-nodes [dom n]
+	    (take-while #(not (nil? %)) (iterate next-sibling-map (first-child-map n))))
+
+  DomModification
+   (add-child [this np nc]
+	      (cond
+					; check parent node
+	       (not (verify-parent this np))
+	       (throw (Exception. (str np " is not a valid parent node")))
+
+					;check child node
+	       (belongs? this nc)
+	       (throw (Exception. (str "Child node " nc " already belongs to this DOM")))
+
+	       (not (instance? Node nc))
+	       (throw (Exception. (str nc " is not a valid child node")))
+
+					; both np and nc are ok
+	       :default
+	       (let [fc (first-child-map np)
+		     lc (last-child-map np)]
+		  (cond
+		   fc ; already has children
+		   (new Dom
+			root			     ; root
+			(assoc parent-map nc np)     ; parent
+			first-child-map ; first child - no change
+			(assoc last-child-map np nc) ; last child
+			(assoc previous-sibling-map nc lc) ; prev sibling
+			(assoc next-sibling-map lc nc)	; next-sibling
+			(conj nodes-set nc)	       ; nodes
+			)
+
+		   :default ; parent node has no children
+		   (new Dom
+			root			     ; root
+			(assoc parent-map nc np)     ; parent
+			(assoc first-child-map np nc) ; first child
+			(assoc last-child-map np nc) ; last child
+			previous-sibling-map ; prev sibling
+			next-sibling-map ; next-sibling
+			(conj nodes-set nc)	       ; nodes
+			)))
+	       )) ; end add-child
+   
+   (insert-after [this n1 n2]
+		 (cond
+		  ; validation checks
+		  (= root n1)
+		  (throw (Exception. (str n1 " is a root node")))
+	 
+		  (not (belongs? this n1))
+		  (throw (Exception. (str n1 " is not part of the DOM structure")))
+
+		  (= n1 n2)
+		  (throw (Exception. (str "Attempting to insert " n1 " after itself.")))
+
+		  (contains? (set (parent-nodes this n1)) n2)
+		  (throw (Exception. (str n2 " is one of the parent nodes of " n1)))
+
+		  ; everything ok
+		  :default
+		  nil
+		  )	
+		 )) ; end insert-after
+
+(defn validate-root
+  "Returns true if root node is valid"
+  [n]
+  (and (instance? Node n)
+       (:element n)))
+
+(defn create-dom
+  "Creates a DOM ready to be filled with nodes. If you do not supply a root node, a dummy node will be created."
+  ([] (create-dom (Node. nil nil :root nil)))
+  ([n]
+   (if (validate-root n)
+    (new Dom
+	 n			       ; root node
+	 {}			       ; parent-map
+	 {}			       ; first-child-map
+	 {}                            ; last-child-map  
+	 {}			       ; previous-sibling-map
+	 {}			       ; next-sibling-map
+	 #{n}			       ; nodes that belong to this DOM
+	 )
+    (throw (Exception. (str "Node " n  " is not a valid root node."))))))
+
+(defn text-node
+  "Returns a text node that contains the given string. "
+  [s]
+  (let [n (Node. nil s  nil nil)]
+    (if (valid? n) n)))
+
+(defn comment-node
+  "Returns a comment node that contains the given string."
+  [#^String s]
+  (let [n (Node. s nil nil nil)]
+    (if (valid? n) n)))
+
+(defn element-node
+  "Returns an element node based on the. el is the element name as a keyword or a string. at-map is a map of the attributes.If the resulting element node is not valid, nil is returned."
+  ([el at-map]
+     (let [k (if (keyword? el) el (to-keyword el))
+	   n (Node. nil nil k at-map)]
+       (if (valid? n) n)))
+  ([el atr val & keyvals] (element-node el (conj (hash-map atr val) (apply hash-map keyvals)))))
+
+
+
+
+     
+
