@@ -170,8 +170,9 @@
 	   (is (nil? (-> dom (add-child n1 n3) (first-child n2))))
 	   (is (nil? (-> dom (add-child n1 n3) (last-child n2))))
 	   )
-	  (testing "moving a node without changing the parent"
+	 (testing "moving a node without changing the parent"
 	   (is (= n5 (-> dom (add-child n3 n5) (last-child n3))))
+	   (is (= n4 (-> dom (add-child n3 n5) (first-child n3))))
 	   (is (= n3 (-> dom (add-child n3 n5) (parent n5))))
 	   (is (= n4 (-> dom (add-child n3 n5) (previous-sibling n5))))
 	   (is (= n5 (-> dom (add-child n3 n5) (next-sibling n4))))

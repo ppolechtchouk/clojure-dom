@@ -90,7 +90,8 @@
 
   (add-child [dom np nc] "Returns a new DOM with the child node (nc) added to the parent node (np). Note that nc will be the last child of np if np already has children. Throws an exception if np is not a valid parent node, or nc is not a valid child node. If nc belongs to this dom, 'add-child-with-move' is executed instead.")
   (add-child-with-move [dom np nc] "Returns a new DOM with the child node (nc) added to the parent node (np). If nc belongs to the dom and has any children, they will be moved as well. Throws an exception if np is not a valid parent node or nc is not a valid child. Note that if nc does not belong to dom, using 'add-child' will be quicker.")
-  (insert-after [dom n1 n2] "Returns a new DOM with n2 as the next sibling of n1. If n2 is already part of the DOM structure, it will be moved to a new location. n1 can not be a root node and must belong to the DOM otherwise an exception is thrown. n2 can not be one of the parent nodes of n1.")
+  (insert-before [dom n1 n2] "Returns a new DOM with n2 as the next sibling of n1. If n2 is already part of the DOM structure, it will be moved to a new location. n1 can not be a root node and must belong to the DOM otherwise an exception is thrown. n2 can not be one of the parent nodes of n1.")
+  (insert-before-with-move [dom n1 n2] "Returns a new DOM with n2 as the next sibling of n1. If n2 is already part of the DOM structure, it will be moved to a new location. n1 can not be a root node and must belong to the DOM otherwise an exception is thrown. n2 can not be one of the parent nodes of n1.")
 )
 
 (defn verify-parent
@@ -109,7 +110,7 @@
 	np (parent dom n)]
     (new Dom
 	(:root dom)
-	(:parent-map dom)
+	(dissoc (:parent-map dom) n)
 	(if (= n (first-child dom np))
 	  (assoc (:first-child-map dom) np ns)
 	  (:first-child-map dom))
@@ -187,6 +188,9 @@
    (add-child-with-move [dom np nc]
      (cond
 
+      (= nc  (last-child-map np)) ; no change if the node is not even moving
+      dom
+
       (not (belongs? dom nc))
       (add-child dom np nc)
 					; 
@@ -218,7 +222,10 @@
    
    (insert-after [this n1 n2]
 		 (cond
-		  ; validation checks
+					; validation checks
+		  (belongs? this n2)
+		  (insert-after-with-move this n1 n2)
+		  
 		  (= root n1)
 		  (throw (Exception. (str n1 " is a root node")))
 	 
@@ -234,8 +241,15 @@
 		  ; everything ok
 		  :default
 		  nil
-		  )	
-		 )) ; end insert-after
+		  )) ; end insert-after
+
+   (insert-after-with-move [this n1 n2]
+     (cond
+      (not (belongs? this n2))
+      (insert-after this n1 n2)
+      )
+     ) ; end insert-after-with-move
+   ) ; end Dom
 
 (defn validate-root
   "Returns true if root node is valid"
