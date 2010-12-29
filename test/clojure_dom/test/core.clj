@@ -192,25 +192,3 @@
      ))
 					; end test-add-child
 
-(deftest test-insert-after
-  (testing "Testing insert-after function"
-    (let [n1 (clojure-dom.core.Node. nil nil :root nil)
-	  n2 (clojure-dom.core.Node. nil nil :n2 nil)
-	  n3 (clojure-dom.core.Node. nil nil :n3 nil)
-	  n4 (clojure-dom.core.Node. "comment" nil nil nil)
-	  n5 (clojure-dom.core.Node. nil "text" nil nil)]
-
-      (testing "illegal node"
-	(is (thrown? Exception (-> (create-dom n1) (add-child n1 n2) (insert-after n1 n3))))
-	(is (thrown? Exception (-> (create-dom n1) (add-child n1 n2) (insert-after n3 n4))))
-	(is (thrown? Exception (-> (create-dom n1) (add-child n1 n2) (insert-after nil n3))))
-	(is (thrown? Exception (-> (create-dom n1)
-				   (add-child n1 n2) (add-child n2 n3) (add-child n3 n4)
-				   (insert-after n4 n2))))
-	(is (thrown? Exception (-> (create-dom n1)
-				   (add-child n1 n2) (add-child n2 n3) (add-child n3 n4)
-				   (insert-after n4 n1))))
-	(is (thrown? Exception (-> (create-dom n1) (add-child n1 n2) (insert-after n2 nil))))
-	(is (thrown? Exception (-> (create-dom n1) (add-child n1 n2) (insert-after n2 {})))))
-      )))
- ; end test-insert-after 

@@ -1,31 +1,45 @@
 (ns clojure-dom.xml.reader
   (:use clojure-dom.core)
+  (:import [org.xml.sax InputSource Attributes SAXException] 
+	   [java.io StringReader BufferedReader Reader File FileReader]
+	   [javax.xml.parsers SAXParser SAXParserFactory])
   (:gen-class
-   :implements [org.xml.sax.helpers.DefaultHandler org.xml.sax.ext.LexicalHandler]
+   :extends org.xml.sax.helpers.DefaultHandler
+   :implements [ org.xml.sax.ext.LexicalHandler]
    :init init
-   :constructors {[]}
+   :constructors {[] []}
    :state state))
 
+					; Utility fns
 (defn map-atts
-  "Creates a map out of attributes names and values" 
+  "Creates a map out of attributes names and values. Returns attributes map or nil if none" 
   [#^org.xml.sax.Attributes atts]
   (if (= (.getLength atts) 0)
-    {}
+    nil
     (reduce merge
 	    (for [idx (range (.getLength atts))]
 	      (assoc {} (to-keyword (.getQName atts idx)) (.getValue atts idx))))))
 
+
+
+
 (defn -init [] ; class constructor
-  [[] (ref nil)]) ; state will be used for building DOM
+  [[] {:dom (ref (create-dom)) :open (ref ())}]) ; state will be used for building DOM
 
 
 ;; DefaultHandler methods
 (defn -startDocument [this]
-					; do nothing
+  (dosync
+   (alter (:open (.state this))
+	  conj
+	  (:root (deref (:dom (.state this))))))
+  
+  (println "doc started.")
   )
 
 (defn -endDocument [this]
-					; do nothing
+					; TODO
+  (println "doc finished")
   )
 
 (defn  -startElement [this,
@@ -34,20 +48,35 @@
 		     qName,
 		      #^org.xml.sax.Attributes attributes]
 					;TODO
+  (let [dom (:dom (.state this))
+	open (:open (.state this))
+	node (element-node localName (map-atts attributes))
+	]
+      (dosync
+       (alter dom add-child (first @open) node)
+       (alter open conj node)))
+  (println (str "Start element " localName  " qn: " qName))
   )
 
 (defn  -endElement [this,
 		     uri,
 		     localName,
 		     qName]
-					;TODO
+  (dosync
+   (alter (:open (.state this)) next)) ; close currently open node
+  (println (str "End element " localName  " qn: " qName))
   )
 
 (defn -characters [ this,
 		   ^chars ch,
-		   ^int start,
-		   ^int length]
-					;TODO
+		   start,
+		   length]
+   (let [dom (:dom (.state this))
+	node (text-node (new String ch start length))]
+      (dosync
+       (alter dom add-child (first @(:open (.state this))) node))
+      (println (str "Text: " (:text node)))
+      )
   )
 
 
@@ -55,7 +84,8 @@
 			    ^chars ch,
 			    start,
 			    length]
-; TODO
+					; do nothing
+(println (str "IgWhitespace: " length " chars"))
   )
 
 (defn -warning [this, e]
@@ -74,15 +104,22 @@
 		^chars ch,
 		start,
 		length]
-					;TODO
+  (let [dom (:dom (.state this))
+	node (comment-node (new String ch start length))]
+      (dosync
+       (alter dom add-child (first @(:open (.state this))) node))
+      (println (str "Comment: " (:comment node)))
+      ) 
   )
 
-(defn -startEntity [ this, ^String name]
-  ;TODO
+(defn -startEntity [ this, #^String name]
+					; do nothing - will be automatically converted to text
+  (println (str "start entity " name))
   )
 
 (defn -endEntity [ this, #^String name]
-  ;TODO
+					;do nothing
+  (println (str "end entity " name))
 )
 
 (defn -startCDATA [this]
@@ -92,3 +129,29 @@
 (defn -endCDATA [this]
 ; do nothing
   )
+
+
+
+
+(defn parse [source]
+  "Parses the XML source. The source should either be a File, InputSource, InputStream or a URI as a string"
+  (let [parser-factory (. SAXParserFactory newInstance)
+	handler (new clojure_dom.xml.reader)
+	]    
+    (.setNamespaceAware parser-factory true)
+    (doto (.newSAXParser parser-factory)
+      (.setProperty "http://xml.org/sax/properties/lexical-handler" handler)
+      (.parse source handler))
+    (deref (:dom (.state handler)))		; return state
+    ))
+
+(defn parse-string
+  "Parses an XML string. s is a string containing XML"
+  [s]
+  (parse (InputSource. (StringReader. s))))
+
+(defn parse-file
+  "Parses an XML file. f is the file name as a string or a java.io.File object"
+  [f]
+  (parse (InputSource. (FileReader. f))))
+

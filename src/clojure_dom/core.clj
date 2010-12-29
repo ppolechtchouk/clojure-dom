@@ -1,5 +1,5 @@
 (ns clojure-dom.core
-  (:use clojure.test))
+  )
 
 (def *keywords* (agent 
 		 (hash-map)
@@ -87,11 +87,11 @@
 
 (defprotocol DomModification
   "Various functions for creating a new DOM instance with a modified structure."
+  (orphanize [dom n]  "Returns a dom with the node n removed from first-child, last-child, previous-sibling and next-sibling maps. Note that the resulting structure is illegal. This function is used as an intermediate only! If n does not belong to dom, the original dom is returned.")
+  (add-child [dom np nc] "Returns a new DOM with the child node (nc) added to the parent node (np). Note that nc will be the last child of np if np already has children. If nc belongs to the dom and has any children, they will be moved as well. Throws an exception if np is not a valid parent node, or nc is not a valid child node.")
+ 
+ ; (insert-before [dom n1 n2] "Returns a new DOM with n2 as the next sibling of n1. If n2 is already part of the DOM structure, it will be moved to a new location. n1 can not be a root node and must belong to the DOM otherwise an exception is thrown. n2 can not be one of the parent nodes of n1.")
 
-  (add-child [dom np nc] "Returns a new DOM with the child node (nc) added to the parent node (np). Note that nc will be the last child of np if np already has children. Throws an exception if np is not a valid parent node, or nc is not a valid child node. If nc belongs to this dom, 'add-child-with-move' is executed instead.")
-  (add-child-with-move [dom np nc] "Returns a new DOM with the child node (nc) added to the parent node (np). If nc belongs to the dom and has any children, they will be moved as well. Throws an exception if np is not a valid parent node or nc is not a valid child. Note that if nc does not belong to dom, using 'add-child' will be quicker.")
-  (insert-before [dom n1 n2] "Returns a new DOM with n2 as the next sibling of n1. If n2 is already part of the DOM structure, it will be moved to a new location. n1 can not be a root node and must belong to the DOM otherwise an exception is thrown. n2 can not be one of the parent nodes of n1.")
-  (insert-before-with-move [dom n1 n2] "Returns a new DOM with n2 as the next sibling of n1. If n2 is already part of the DOM structure, it will be moved to a new location. n1 can not be a root node and must belong to the DOM otherwise an exception is thrown. n2 can not be one of the parent nodes of n1.")
 )
 
 (defn verify-parent
@@ -102,27 +102,11 @@
    (:element n)
    (belongs? dom n)))
 
-(defn orphanize
-  "Returns a dom with the node n removed from first-child, last-child, previous-sibling and next-sibling maps. Note that the resulting structure is illegal. This function is used as an intermediate only!"
-  [dom n]
-  (let [ps (previous-sibling dom n)
-	ns (next-sibling dom n)
-	np (parent dom n)]
-    (new Dom
-	(:root dom)
-	(dissoc (:parent-map dom) n)
-	(if (= n (first-child dom np))
-	  (assoc (:first-child-map dom) np ns)
-	  (:first-child-map dom))
-	(if (= n (last-child dom np))
-	  (assoc (:last-child-map dom) np ps)
-	  (:last-child-map dom))
-	(assoc (dissoc (:previous-sibling-map dom) n) ns ps)
-	(assoc (dissoc (:next-sibling-map dom) n) ps ns) 
-	(:nodes-set dom)))) ; end orphanize
+ 
 
 (defrecord Dom 
     [root parent-map first-child-map last-child-map previous-sibling-map next-sibling-map nodes-set]
+  ; note that a root node can have comment nodes as previous or next siblings
   DomAccess
   (belongs? [dom n]
 	    (contains? nodes-set n))
@@ -143,12 +127,27 @@
 	    (take-while #(not (nil? %)) (iterate next-sibling-map (first-child-map n))))
 
   DomModification
+  (orphanize  [dom n]
+	      (if (belongs? dom n)
+	       (let [ps (previous-sibling dom n)
+		     ns (next-sibling dom n)
+		     np (parent dom n)]
+		 (new Dom
+		      root
+		      (dissoc parent-map n)
+		      (if (= n (first-child dom np))
+			(assoc first-child-map np ns)
+			first-child-map)
+		      (if (= n (last-child dom np))
+			(assoc last-child-map np ps)
+			last-child-map)
+		      (assoc (dissoc previous-sibling-map n) ns ps)
+		      (assoc (dissoc next-sibling-map n) ps ns) 
+		      nodes-set))
+	       dom ; no need for modification
+	       )) ; end orphanize
    (add-child [this np nc]
 	      (cond
-					; move nc structure
-	       (belongs? this nc)
-	       (add-child-with-move this np nc)
-
 					; check parent node
 	       (not (verify-parent this np))
 	       (throw (Exception. (str np " is not a valid parent node")))
@@ -157,99 +156,38 @@
 	       (not (instance? Node nc))
 	       (throw (Exception. (str nc " is not a valid child node")))
 
+	       (= np nc)
+	       (throw (Exception. (str "Trying to add " nc " as a child of itself")))
+
+	       (ancestor? this nc np)
+	       (throw (Exception. (str nc " is an ancestor of " np)))
+
 					; both np and nc are ok
+
+	       (= nc  (last-child-map np)) ; no change if the node is not even moving
+	       this
+
 	       :default
 	       (let [fc (first-child-map np)
-		     lc (last-child-map np)]
-		  (cond
-		   fc ; already has children
-		   (new Dom
-			root			     ; root
-			(assoc parent-map nc np)     ; parent
-			first-child-map ; first child - no change
-			(assoc last-child-map np nc) ; last child
-			(assoc previous-sibling-map nc lc) ; prev sibling
-			(assoc next-sibling-map lc nc)	; next-sibling
-			(conj nodes-set nc)	       ; nodes
-			)
-
-		   :default ; parent node has no children
-		   (new Dom
-			root			     ; root
-			(assoc parent-map nc np)     ; parent
-			(assoc first-child-map np nc) ; first child
-			(assoc last-child-map np nc) ; last child
-			previous-sibling-map ; prev sibling
-			next-sibling-map ; next-sibling
-			(conj nodes-set nc)	       ; nodes
-			)))
+		     lc (last-child-map np)
+		     odom (orphanize this nc)]		 
+		 (new Dom
+		      root			     ; root
+		      (assoc (:parent-map odom) nc np)   ; parent
+		      (if fc (:first-child-map odom) ; first child - no change
+			  (assoc (:first-child-map odom) np nc) ; change
+			  )
+		      (assoc (:last-child-map odom) np nc) ; last child
+		      (assoc (:previous-sibling-map odom) nc lc) ; prev sibling
+		      (if lc (assoc (:next-sibling-map odom) lc nc) ; next-sibling - changed
+			  (:next-sibling-map odom) ; no change
+			  )
+		      (conj nodes-set nc)	       ; nodes
+		      ))
 	       )) ; end add-child
-
-   (add-child-with-move [dom np nc]
-     (cond
-
-      (= nc  (last-child-map np)) ; no change if the node is not even moving
-      dom
-
-      (not (belongs? dom nc))
-      (add-child dom np nc)
-					; 
-      (= np nc)
-      (throw (Exception. (str "Trying to add " nc " as a child of itself")))
-
-      (ancestor? dom nc np)
-      (throw (Exception. (str nc " is an ancestor of " np)))
-
-      (not (instance? Node nc))
-      (throw (Exception. (str nc " is not a valid child node")))
-
-      :default ; np and nc OK
-      (let [fc (first-child-map np)
-	    lc (last-child-map np)
-	    odom (orphanize dom nc)]
-	(new Dom
-	     root			     ; root
-	     (assoc parent-map nc np)     ; parent
-	     (if fc
-	       (:first-child-map odom)
-	       (assoc (:first-child-map odom) np nc)) ; first child
-	     (assoc (:last-child-map odom) np nc)	       ; last child
-	     (assoc (:previous-sibling-map odom) nc lc) ; prev sibling
-	     (assoc (:next-sibling-map odom) lc nc) ; next-sibling
-	     nodes-set 	       ; nodes
-	     ))
-      )) ; end add-child-with-move
-   
-   (insert-after [this n1 n2]
-		 (cond
-					; validation checks
-		  (belongs? this n2)
-		  (insert-after-with-move this n1 n2)
-		  
-		  (= root n1)
-		  (throw (Exception. (str n1 " is a root node")))
-	 
-		  (not (belongs? this n1))
-		  (throw (Exception. (str n1 " is not part of the DOM structure")))
-
-		  (= n1 n2)
-		  (throw (Exception. (str "Attempting to insert " n1 " after itself.")))
-
-		  (contains? (set (parent-nodes this n1)) n2)
-		  (throw (Exception. (str n2 " is one of the parent nodes of " n1)))
-
-		  ; everything ok
-		  :default
-		  nil
-		  )) ; end insert-after
-
-   (insert-after-with-move [this n1 n2]
-     (cond
-      (not (belongs? this n2))
-      (insert-after this n1 n2)
-      )
-     ) ; end insert-after-with-move
    ) ; end Dom
+
+
 
 (defn validate-root
   "Returns true if root node is valid"

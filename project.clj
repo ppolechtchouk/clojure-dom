@@ -1,4 +1,4 @@
-(defproject clojure-dom "1.0.0-SNAPSHOT"
+(defproject clojure-dom "0.1.0"
   :description "Document Object Module for Clojure."
   :dependencies [[org.clojure/clojure "1.2.0"]
                  [org.clojure/clojure-contrib "1.2.0"]]
