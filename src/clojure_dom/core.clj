@@ -92,7 +92,14 @@
  
  ; (insert-before [dom n1 n2] "Returns a new DOM with n2 as the next sibling of n1. If n2 is already part of the DOM structure, it will be moved to a new location. n1 can not be a root node and must belong to the DOM otherwise an exception is thrown. n2 can not be one of the parent nodes of n1.")
 
-)
+  )
+
+(defprotocol DomComments
+  "Functions for supporting header and footer comments - i.e. a comment immediately before and a comment immediately after a root node"
+  (add-header [dom s] "Returns a dom with the string s as a header comment. Use nil to remove existing comment")
+  (add-footer [dom s] "Returns a dom with the string s as a footer comment. Use nil to remove existing comment")
+  (add-comments [dom header footer] "Returns a dom with header and footer comments")
+  )
 
 (defn verify-parent
   "Returns true if n is a valid parent node - i.e. element node and belongs to the DOM"
@@ -105,7 +112,16 @@
  
 
 (defrecord Dom 
-    [root parent-map first-child-map last-child-map previous-sibling-map next-sibling-map nodes-set]
+    [root ; root node. Must be an element node
+     parent-map ; hash map in the form of {node parent-node}
+     first-child-map ; hash map {parent-node first-child-node}
+     last-child-map ; hash map {parent-node last-child-node}
+     previous-sibling-map ; hash map {node previous-node}
+     next-sibling-map ; hash map {node next-node}
+     nodes-set ; a set of all nodes belonging to this DOM
+     header ; comment text that is placed before the root node
+     footer ; comment text that is placed after the root node
+     ]
   ; note that a root node can have comment nodes as previous or next siblings
   DomAccess
   (belongs? [dom n]
@@ -124,7 +140,13 @@
   (last-child [dom n]
 	       (last-child-map n))
   (child-nodes [dom n]
-	    (take-while #(not (nil? %)) (iterate next-sibling-map (first-child-map n))))
+	       (take-while #(not (nil? %)) (iterate next-sibling-map (first-child-map n))))
+  DomComments
+  (add-header [dom s] (assoc dom :header (if s (str s) nil)))
+  (add-footer [dom s] (assoc dom :footer (if s (str s) nil)))
+  (add-comments [dom h f]
+		(assoc dom :header (if h (str h) nil) :footer (if f (str f) nil)))
+  
 
   DomModification
   (orphanize  [dom n]
@@ -143,7 +165,10 @@
 			last-child-map)
 		      (assoc (dissoc previous-sibling-map n) ns ps)
 		      (assoc (dissoc next-sibling-map n) ps ns) 
-		      nodes-set))
+		      nodes-set
+		      header
+		      footer
+		      ))
 	       dom ; no need for modification
 	       )) ; end orphanize
    (add-child [this np nc]
@@ -183,6 +208,8 @@
 			  (:next-sibling-map odom) ; no change
 			  )
 		      (conj nodes-set nc)	       ; nodes
+		      (:header odom)
+		      (:footer odom)
 		      ))
 	       )) ; end add-child
    ) ; end Dom
@@ -208,6 +235,8 @@
 	 {}			       ; previous-sibling-map
 	 {}			       ; next-sibling-map
 	 #{n}			       ; nodes that belong to this DOM
+	 nil ;header
+	 nil ;footer
 	 )
     (throw (Exception. (str "Node " n  " is not a valid root node."))))))
 

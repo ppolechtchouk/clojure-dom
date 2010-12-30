@@ -93,6 +93,63 @@
        (is (thrown? Exception (create-dom nil))))
      )))
 					; end test-dom-root
+(deftest test-dom-header
+  (let [dom (create-dom)]
+    (testing "DOM without header comment"
+     (is (nil? (:header dom)))
+     (is (nil? (previous-sibling dom (:root dom))))
+     (is (nil? (next-sibling dom (:root dom))))
+     ))
+  (let [dom (add-header (create-dom) nil)]
+    (testing "DOM with a nil header comment"
+     (is (nil? (:header dom)))
+     (is (nil? (previous-sibling dom (:root dom))))
+     (is (nil? (next-sibling dom (:root dom))))
+     ))
+  (let [dom (add-header (create-dom) "header test")]
+    (testing "DOM with a header comment"
+     (is (= "header test" (:header dom)))
+     (is (nil? (previous-sibling dom (:root dom))))
+     (is (nil? (next-sibling dom (:root dom))))
+     (is (nil? (:footer dom)))
+     (is (= "test2" (:header (add-header dom "test2"))))
+     (is (nil? (:header (add-header dom nil))))
+     ))
+  ) ; end test-dom-header
+
+(deftest test-dom-footer
+  (let [dom (create-dom)]
+    (testing "DOM without footer comment"
+     (is (nil? (:footer dom)))
+     (is (nil? (previous-sibling dom (:root dom))))
+     (is (nil? (next-sibling dom (:root dom))))
+     ))
+  (let [dom (add-footer (create-dom) nil)]
+    (testing "DOM with a nil footer comment"
+     (is (nil? (:footer dom)))
+     (is (nil? (previous-sibling dom (:root dom))))
+     (is (nil? (next-sibling dom (:root dom))))
+     ))
+  (let [dom (add-footer (create-dom) "footer test")]
+    (testing "DOM with a footer comment"
+     (is (= "footer test" (:footer dom)))
+     (is (nil? (next-sibling dom (:root dom))))
+     (is (nil? (previous-sibling dom (:root dom))))
+     (is (nil? (:header dom)))
+     (is (= "test2" (:footer (add-footer dom "test2"))))
+     (is (nil? (:header (add-footer dom nil))))
+     ))
+  ) ; end test-dom-footer
+
+(deftest test-dom-comments
+  (testing "DOM with both header and footer comments"
+    (is (= "header" (:header (add-comments (create-dom) "header" "footer"))))
+    (is (= "footer" (:footer (add-comments (create-dom) "header" "footer"))))
+    (is (= "header" (:header (add-comments (create-dom) "header" nil))))
+    (is (= "footer" (:footer (add-comments (create-dom) nil "footer"))))
+    (is (nil? (:footer (add-comments (create-dom) "header" nil))))
+    (is (nil? (:header (add-comments (create-dom) nil "footer"))))
+    ))
 
 (deftest test-add-child
   (testing "add-child function"
