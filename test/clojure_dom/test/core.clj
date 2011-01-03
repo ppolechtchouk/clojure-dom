@@ -249,3 +249,97 @@
      ))
 					; end test-add-child
 
+(deftest test-export-dom
+  (testing "Exporting DOM sub-structure"
+    (let [n0 (element-node :root)
+	  c1 (comment-node "comment 1")
+	  n2 (element-node :node3)
+	  c3 (comment-node "comment 2")
+	  t4 (text-node "text 1")
+	  n5 (element-node :node5)
+
+	  t21 (text-node "text 2")
+	  n22 (element-node :node22)
+	  n23 (element-node :node23)
+
+	  c221 (comment-node "comment 3")
+	  n222 (element-node :node223)
+	  t223 (text-node "text 3")
+
+	  t51 (text-node "blah blah")
+	  n52 (element-node :node52)
+	  c53 (comment-node "comment bkah blah")
+
+	  dom (-> (create-dom n0)
+		  (add-child n0 c1) (add-child n0 n2) (add-child n0 c3)  (add-child n0 t4)  (add-child n0 n5)
+		  (add-child n2 t21) (add-child n2 n22) (add-child n2 n23)
+		  (add-child n22 c221) (add-child n22 n222) (add-child n22 t223)
+		  (add-child n5 t51) (add-child n5 n52) (add-child  n5 c53))
+	  ]
+      
+      (testing "illegal root nodes for export"
+	(is (thrown? Exception (export-dom dom c1))) ; comment node
+	(is (thrown? Exception (export-dom dom t4))) ; text node
+	(is (thrown? Exception (export-dom dom (element-node :node))))
+	; doesn't belong to DOM
+	)
+
+      (testing "Header and footer of exported DOM"
+	(is (= (:comment c1) (:header (export-dom dom n2))))
+	(is (= (:comment c3) (:footer (export-dom dom n2))))
+	(is (nil? (:header (export-dom dom n22))))
+	(is (nil? (:footer (export-dom dom n22))))
+	(is (= (:comment c221) (:header (export-dom dom n222))))
+	(is (nil? (:footer (export-dom dom n222))))
+	(is (nil? (:header (export-dom dom n52))))
+	(is (= (:comment c53) (:footer (export-dom dom n52))))
+	)
+      (testing "Structure of exported DOM"
+	(let [domn2 (export-dom dom n2)]
+	  (testing "Node maps contain correct nodes"
+	    (is (= (:nodes-set domn2) #{n2 t21 n22 n23 c221 n222 t223}))
+	    (is (not-any? #{c1 c3 t4 n5 t51 n52 c53} (keys (:parent-map domn2))))
+	    (is (not-any? #{c1 c3 t4 n5 t51 n52 c53} (vals (:parent-map domn2))))
+	    (is (not-any? #{c1 c3 t4 n5 t51 n52 c53} (keys (:first-child-map domn2))))
+	    (is (not-any? #{c1 c3 t4 n5 t51 n52 c53} (vals (:first-child-map domn2))))
+	    (is (not-any? #{c1 c3 t4 n5 t51 n52 c53} (keys (:last-child-map domn2))))
+	    (is (not-any? #{c1 c3 t4 n5 t51 n52 c53} (vals (:last-child-map domn2))))
+	    (is (not-any? #{c1 c3 t4 n5 t51 n52 c53} (keys (:previous-sibling-map domn2))))
+	    (is (not-any? #{c1 c3 t4 n5 t51 n52 c53} (vals (:previous-sibling-map domn2))))
+	    (is (not-any? #{c1 c3 t4 n5 t51 n52 c53} (keys (:next-sibling-map domn2))))
+	    (is (not-any? #{c1 c3 t4 n5 t51 n52 c53} (vals (:next-sibling-map domn2))))
+	    )
+	  (testing "Root node"
+	   (is (= n2 (:root domn2)))
+	   (is (nil? (previous-sibling domn2 n2)))
+	   (is (nil? (next-sibling domn2 n2)))
+	   (is (nil? (parent domn2 n2))))
+	  (testing "Parents"
+	    (is (= n2 (parent domn2 t21)))
+	    (is (= n2 (parent domn2 n22)))
+	    (is (= n2 (parent domn2 n23)))
+	    (is (= n22 (parent domn2 c221)))
+	    (is (= n22 (parent domn2 n222)))
+	    (is (= n22 (parent domn2 t223))))
+	  (testing "First and last child"
+	    (is (= t21 (first-child domn2 n2)))
+	    (is (= n23 (last-child domn2 n2)))
+	    (is (nil? (first-child domn2 n23)))
+	    (is (nil? (last-child domn2 n23)))
+	    (is (= c221 (first-child domn2 n22)))
+	    (is (= t223 (last-child domn2 n22))))
+	  (testing "Previous and next sibling"
+	    (is (= t21 (previous-sibling domn2 n22)))
+	    (is (= n23 (next-sibling domn2 n22)))
+	    (is (nil? (previous-sibling domn2 t21)))
+	    (is (nil? (next-sibling domn2 n23)))
+	    (is (= n22 (previous-sibling domn2 n23)))
+	    (is (= n22 (next-sibling domn2 t21)))
+
+	    (is (= c221 (previous-sibling domn2 n222)))
+	    (is (= t223 (next-sibling domn2 n222)))
+	    (is (nil? (previous-sibling domn2 c221)))
+	    (is (nil? (next-sibling domn2 t223)))
+	    (is (= n222 (previous-sibling domn2 t223)))
+	    (is (= n222 (next-sibling domn2 c221))))))
+      ))) ; end test-export-dom

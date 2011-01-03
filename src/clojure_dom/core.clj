@@ -101,6 +101,13 @@
   (add-comments [dom header footer] "Returns a dom with header and footer comments")
   )
 
+(defprotocol DomExport
+  "Functions that allow exporting a sub-section of a DOM as a new DOM"
+  (exported-nodes-set [dom n] "Returns a set of nodes that would be exported or nil in node n can not be exported.")
+  (export-dom [dom n] "Returns a new DOM with node n as the root. The DOM will contain all the sub-structure unter n. If there are comment nodes around n, they will be used as header and footer source.
+Throws an exception is n is an illegal root node or n does not belong to dom. ")
+ )
+
 (defn verify-parent
   "Returns true if n is a valid parent node - i.e. element node and belongs to the DOM"
   [dom n]
@@ -212,6 +219,42 @@
 		      (:footer odom)
 		      ))
 	       )) ; end add-child
+   DomExport
+   (exported-nodes-set [dom n]
+		       (if (and (belongs? dom n) (:element n))
+			 (loop [children (child-nodes dom n)
+				result (list n)
+				]
+			   (if (empty? children)
+			     (set result)
+			     (recur
+			      (mapcat #(child-nodes dom %) children)
+			      (concat result children))
+			     )))) ; end exported-nodes-set
+   (export-dom [dom n]
+	       (cond
+		; Perform checks
+		(not (belongs? dom n))
+		(throw (Exception. (str "Trying to export a node " n " that does not belong to DOM.")))
+
+		(or (:comment n) (:text n))
+		(throw (Exception. (str n " is an illegal root node.")))
+
+		;all OK
+		:default
+		(let [ns (exported-nodes-set dom n)
+		      nsn (apply disj nodes-set ns)]
+		 (new Dom
+		      n
+		      (dissoc (apply dissoc parent-map nsn) n)
+		      (apply dissoc first-child-map nsn) ; hash map {parent-node first-child-node}
+		      (apply dissoc last-child-map nsn) ; hash map {parent-node last-child-node}
+		      (dissoc (apply dissoc previous-sibling-map nsn) n) ; hash map {node previous-node}
+		      (dissoc (apply dissoc next-sibling-map nsn) n) ; hash map {node next-node}		      
+		      ns
+		      (:comment (previous-sibling dom n))
+		      (:comment (next-sibling dom n))))
+		))
    ) ; end Dom
 
 
