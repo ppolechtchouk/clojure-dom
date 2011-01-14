@@ -1,3 +1,4 @@
+
 (ns clojure-dom.xml.reader
   (:use clojure-dom.core)
   (:import [org.xml.sax InputSource Attributes SAXException] 
@@ -142,7 +143,9 @@
     (doto (.newSAXParser parser-factory)
       (.setProperty "http://xml.org/sax/properties/lexical-handler" handler)
       (.parse source handler))
-    (deref (:dom (.state handler)))		; return state
+    (let [dom (deref (:dom (.state handler)))]
+      (export-dom dom (first (filter :element (child-nodes dom (:root dom)))))
+      )	; return state
     ))
 
 (defn parse-string

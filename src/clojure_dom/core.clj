@@ -34,42 +34,56 @@
    (not (empty? am)) ; should use nil instead of empty map
    (every? keyword? (keys am)))) ; note that the value of the attribute can be anything
 
+
+
+(defprotocol NodeAccessors
+  "Reading various Node parameters"
+  (comment-text [this] "Returns comment text if node is of the comment type, otherwise nil")
+  (text [this] "Returns the text content of the node if the node is of the text type, otherwise nil")
+  (element [this] "Returns an element name as a keyword, if node is of an element type, otherwise nil")
+  (attributes [this] "Returns an attributes map if node has attributes, otherwise nil")
+  (attribute [this attr] "Returns a value of the attribute, or nil of none")
+  ) ; end NodeAccessors
+
 (defprotocol AttributeManagement
-  "Functions that provide access and 'modification' of the attributes of the element nodes."
-  (attribute [this attr] "Returns the value of the attr attribute or nil if none.")
+  "Functions that provide 'modification' of the attributes of the element nodes."
   (delete-attr [this & attrs] "Returns a new element node with the specified attributes removed from the attributes map.")
   ; change-attr, 
   )
 
-(defrecord Node
-    [comment text element attributes]
+(deftype Node
+    [com txt el attrs]
   Validation
   (valid? [this]
 	  (not
 	   (cond
 	    
-	    comment
-	    (or text element attributes (not (string? comment)))
+	    com
+	    (or txt el attrs (not (string? com)))
 	    
-	    text
-	    (or comment element attributes (not (string? text)))
+	    txt
+	    (or com el attrs (not (string? txt)))
 
-	    attributes ; plus element
-	    (or (not element) text comment (not (verify-attributes attributes)))
+	    attrs ; plus element
+	    (or (not el) txt com (not (verify-attributes attrs)))
 	    
-	    element ; no attributes
-	    (or comment text (not (keyword? element)))
+	    el ; no attributes
+	    (or com txt (not (keyword? el)))
 
 	    :default
 	    true ; i.e. not valid
 	    ))) ; end valid?
+  NodeAccessors
+  (comment-text [this] com)
+  (text [this] txt)
+  (element [this] el)
+  (attributes [this] attrs)
+  (attribute [this attr] (get attrs attr))
 
   AttributeManagement
-  (attribute [this attr] (get attributes attr))
-
-  (delete-attr [this & attrs]
-	       (let [ at-map (apply dissoc attributes attrs)]
-		 (Node. comment text element (if (empty? at-map) nil at-map))))
+  (delete-attr [this & ats]
+	       (let [ at-map (apply dissoc attrs ats)]
+		 (Node. com txt el (if (empty? at-map) nil at-map))))
   ) ; end Node
 
 (defprotocol DomAccess
@@ -90,8 +104,9 @@
   (orphanize [dom n]  "Returns a dom with the node n removed from first-child, last-child, previous-sibling and next-sibling maps. Note that the resulting structure is illegal. This function is used as an intermediate only! If n does not belong to dom, the original dom is returned.")
   (add-child [dom np nc] "Returns a new DOM with the child node (nc) added to the parent node (np). Note that nc will be the last child of np if np already has children. If nc belongs to the dom and has any children, they will be moved as well. Throws an exception if np is not a valid parent node, or nc is not a valid child node.")
  
- ; (insert-before [dom n1 n2] "Returns a new DOM with n2 as the next sibling of n1. If n2 is already part of the DOM structure, it will be moved to a new location. n1 can not be a root node and must belong to the DOM otherwise an exception is thrown. n2 can not be one of the parent nodes of n1.")
-
+					; (insert-before [dom n1 n2] "Returns a new DOM with n2 as the next sibling of n1. If n2 is already part of the DOM structure, it will be moved to a new location. n1 can not be a root node and must belong to the DOM otherwise an exception is thrown. n2 can not be one of the parent nodes of n1.")
+  
+  (mutate-node [dom n1 n2] "Returns a new dom with node n1 replaced by a copy of node n2. Instead of using a Node for :text and :comment nodes you can use key-value pairs that describe the node. For example :text 'blah' instead of a text node. n1 must belong to dom. If n1 had children, they will become the children of n2. Note that the n1 and n2 must be of the same type, i.e. you can only mutate text into other text, comment into other comment, otherwise an exception will be thrown. To replace a node by another node type use replace-node. Since n2 will be copied and not used directly, n2 can belong to dom.")
   )
 
 (defprotocol DomComments
@@ -113,7 +128,7 @@ Throws an exception is n is an illegal root node or n does not belong to dom. ")
   [dom n]
   (and
    (= (class n) Node)
-   (:element n)
+   (element n)
    (belongs? dom n)))
 
  
@@ -219,9 +234,13 @@ Throws an exception is n is an illegal root node or n does not belong to dom. ")
 		      (:footer odom)
 		      ))
 	       )) ; end add-child
+   (mutate-node [dom n1 n2]
+		nil);TODO
+  ;TODO
+   
    DomExport
    (exported-nodes-set [dom n]
-		       (if (and (belongs? dom n) (:element n))
+		       (if (and (belongs? dom n) (element n))
 			 (loop [children (child-nodes dom n)
 				result (list n)
 				]
@@ -237,7 +256,7 @@ Throws an exception is n is an illegal root node or n does not belong to dom. ")
 		(not (belongs? dom n))
 		(throw (Exception. (str "Trying to export a node " n " that does not belong to DOM.")))
 
-		(or (:comment n) (:text n))
+		(or (comment-text n) (text n))
 		(throw (Exception. (str n " is an illegal root node.")))
 
 		;all OK
@@ -252,8 +271,8 @@ Throws an exception is n is an illegal root node or n does not belong to dom. ")
 		      (dissoc (apply dissoc previous-sibling-map nsn) n) ; hash map {node previous-node}
 		      (dissoc (apply dissoc next-sibling-map nsn) n) ; hash map {node next-node}		      
 		      ns
-		      (:comment (previous-sibling dom n))
-		      (:comment (next-sibling dom n))))
+		      (comment-text (previous-sibling dom n))
+		      (comment-text (next-sibling dom n))))
 		))
    ) ; end Dom
 
@@ -262,8 +281,8 @@ Throws an exception is n is an illegal root node or n does not belong to dom. ")
 (defn validate-root
   "Returns true if root node is valid"
   [n]
-  (and (instance? Node n)
-       (:element n)))
+  (and (= (class n) Node)
+       (element n)))
 
 (defn create-dom
   "Creates a DOM ready to be filled with nodes. If you do not supply a root node, a dummy node will be created."

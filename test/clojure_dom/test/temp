@@ -1,0 +1,70 @@
+      (is (thrown? Exception (mutate-node dom n2 :element :blah :text "blah" :comment "blah")))
+
+ 
+   (testing "Element nodes"
+      ; illegal nodes
+      (is (thrown? Exception (mutate-node dom n2 (comment-node "blah"))))
+      (is (thrown? Exception (mutate-node dom n2 (text-node "element"))))
+      (is (thrown? Exception (mutate-node dom n52 :comment "blah")))
+      (is (thrown? Exception (mutate-node dom n52 :text "test")))
+      (is (thrown? Exception (mutate-node dom n2 :element :blah )))
+      
+      (let [nm1 (element-node "blah")
+	    dommut1 (mutate-node dom n2 nm1)
+	    dommut2 (mutate-node dommut1 n52 :element "test" :attributes {:a "a" :b "2"})]
+					; structure
+	(is (= nm1 (next-sibling dommut2 c1)))
+	(is (= nm1 (previous-sibling dommut2 c3)))
+	(is (= n0 (parent dommut2 nm2)))
+	(is (= c3 (next-sibling dommut2 nm1)))
+	(is (= c1 (previous-sibling dommut2 nm1)))
+	(is (= t21 (first-child dommut2 nm1)))
+	(is (= n23 (last-child dommut2 nm1)))
+	(is (= nm1 (parent dommut2 t21)))
+	(is (= nm1 (parent dommut2 n22)))
+	(is (= nm1 (parent dommut2 n23)))
+					; correct map used
+	(is (= :test (:element (next-sibling dommut2 t51))))
+	(is (= "a" (:a (:attributes (previous-sibling dommut2 c53)))))
+	))
+
+
+ (testing "Text nodes"
+      (is (thrown? Exception (mutate-node dom t4 (comment-node "blah"))))
+      (is (thrown? Exception (mutate-node dom t4 (element-node "element"))))
+      (is (thrown? Exception (mutate-node dom t21 :comment "blah")))
+      (is (thrown? Exception (mutate-node dom t21 :element :blah)))
+      (is (thrown? Exception (mutate-node dom t4 :text "blah" :comment "blah")))
+      (let [dommut1 (mutate-node dom t4 (text-node "blah"))
+	    dommut2 (mutate-node dommut1 t21 :text "test")]
+	(is (= "blah" (:text (next-sibling dommut1 c3))))
+	(is (= c3 (previous-sibling (next-sibling dommut1 c3))))
+	(is (= n5 (next-sibling (next-sibling dommut1 c3))))
+	(is (= no (parent (previous-sibling dommut1 n5))))
+	(is (= "test" (:text (first-child dommut2 n5))))
+	(is (nil? (previous-sibling (first-child dommut2 n5))))
+	(is (= n52 (next-sibling (first-child dommut2 n5))))
+	(is (= n5 (parent (first-child dommut2 n5))))
+	(is (not (belongs? dommut2 t4)))
+	(is (not (belongs? dommut2 t21)))
+	))
+     (testing "Comment nodes"
+      (is (thrown? Exception (mutate-node dom c1 (text-node "blah"))))
+      (is (thrown? Exception (mutate-node dom c1 (element-node "element"))))
+      (is (thrown? Exception (mutate-node dom c1 :text "text")))
+      (is (thrown? Exception (mutate-node dom c1 :element :blah)))
+      (is (thrown? Exception (mutate-node dom c1 :text "blah" :comment "blah")))
+      (let [dommut1 (mutate-node dom c1 (comment-node "blah"))
+	    dommut2 (mutate-node dommut1 c221 :comment "test")]
+	(is (= "blah" (:comment (first-child dommut1 n0))))
+	(is (nil? (previous-sibling (first-child dommut1 n0))))
+	(is (= n2 (next-sibling (first-child dommut1 n0))))
+	(is (= no (parent (first-child dommut1 n0))))
+	(is (= "test" (:comment (first-child dommut2 n22))))
+	(is (nil? (previous-sibling (first-child dommut2 n22))))
+	(is (= n222 (next-sibling (first-child dommut2 n22))))
+	(is (= n22 (parent (first-child dommut2 n22))))
+	(is (not (belongs? dommut2 c1)))
+	(is (not (belongs? dommut2 c221)))
+	))
+   

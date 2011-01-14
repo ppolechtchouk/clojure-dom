@@ -1,5 +1,5 @@
 (ns clojure-dom.test.core
-  (:use [clojure-dom.core] :reload)
+  (:use [clojure-dom.core] :reload-all)
   (:use [clojure.test]))
 
 (deftest test-node-valid?
@@ -28,17 +28,17 @@
   (testing "Creating text nodes"
     (is (valid? (text-node "blah")))
     (is (valid? (text-node nil)))
-    (is (= "blah2" (:text (text-node "blah2"))))
-    (is (= "3" (:text (text-node 3))))
-    (is (= "" (:text (text-node nil))))))
+    (is (= "blah2" (text (text-node "blah2"))))
+    (is (= "3" (text (text-node 3))))
+    (is (= "" (text (text-node nil))))))
 
 (deftest test-comment-node
   (testing "Creating comment nodes"
     (is (valid? (comment-node "blah")))
     (is (valid? (comment-node nil)))
-    (is (= "blah2" (:comment (comment-node "blah2"))))
-    (is (= "4" (:comment (comment-node 4))))
-    (is (= "" (:comment (comment-node nil))))))
+    (is (= "blah2" (comment-text (comment-node "blah2"))))
+    (is (= "4" (comment-text (comment-node 4))))
+    (is (= "" (comment-text (comment-node nil))))))
 
 (deftest test-element-node
   (testing "Creating element nodes"
@@ -49,23 +49,23 @@
       (is (valid? (element-node "test" nil)))
       (is (valid? (element-node :test {:a "blah"}))))
     (testing "element parameter"
-      (is (= :blah (:element (element-node :blah))))
-      (is (= :blah2 (:element (element-node "blah2"))))
-      (is (= :blah (:element (element-node :blah nil))))
-      (is (= :test (:element (element-node "test" nil))))
-      (is (= :test (:element (element-node "test" :a "blah"))))
-      (is (= :test (:element (element-node :test :a "blah"))))
-      (is (= :test2 (:element (element-node "test2" {:a "blah"}))))
-      (is (= :test3 (:element (element-node :test3 {:a "blah"}))))
-      (is (= :test (:element (element-node "test" :a "blah" :b "b" :c "test2"))))
-      (is (= :test (:element (element-node :test :a "blah" :b "b" :c "test2")))))
+      (is (= :blah (element (element-node :blah))))
+      (is (= :blah2 (element (element-node "blah2"))))
+      (is (= :blah (element (element-node :blah nil))))
+      (is (= :test (element (element-node "test" nil))))
+      (is (= :test (element (element-node "test" :a "blah"))))
+      (is (= :test (element (element-node :test :a "blah"))))
+      (is (= :test2 (element (element-node "test2" {:a "blah"}))))
+      (is (= :test3 (element (element-node :test3 {:a "blah"}))))
+      (is (= :test (element (element-node "test" :a "blah" :b "b" :c "test2"))))
+      (is (= :test (element (element-node :test :a "blah" :b "b" :c "test2")))))
 
     (testing "element attributes"
       (is (= "blah" (attribute (element-node "test2" {:a "blah"}) :a)))
-      (is (nil? (:attributes (element-node :test nil))))
-      (is (nil? (:attributes (element-node :test {}))))
+      (is (nil? (attributes (element-node :test nil))))
+      (is (nil? (attributes (element-node :test {}))))
       (is (nil? (attribute (element-node "test2" {:a "blah"}) :ba)))
-      (is (= 3 (count (:attributes (element-node :test :a "blah" :b "b" :c "test2")))))
+      (is (= 3 (count (attributes (element-node :test :a "blah" :b "b" :c "test2")))))
       (is (= "blah" (attribute (element-node :test :a "blah" :b "b" :c "test2") :a)))
       (is (= "b" (attribute (element-node :test :a "blah" :b "b" :c "test2") :b)))
       (is (= "test2" (attribute (element-node :test :a "blah" :b "b" :c "test2") :c))))
@@ -154,8 +154,8 @@
 (deftest test-add-child
   (testing "add-child function"
    (let [n1 (element-node :root)
-	 n2 (element-node :n2)
-	 n3 (element-node :n3)
+	 n2 (element-node :node)
+	 n3 (element-node :node)
 	 n4 (comment-node "comment")
 	 n5 (text-node "text")]
      
@@ -183,13 +183,20 @@
        (is (thrown? Exception (-> (create-dom n1) (add-child n1 "blah")))))
 
      (testing "multiple child nodes for a root"
-       (let [root n2
-	     dom (-> (create-dom root) (add-child root n1) (add-child root n3))]
+       (let [root (element-node :root)
+	     dom (-> (create-dom root) (add-child root n1) (add-child root n2)(add-child root n3))]
 	 (is (= root (parent dom n1)))
+	 (is (= root (parent dom n2)))
 	 (is (= root (parent dom n3)))
 	 (is (= n1 (first-child dom root)))
+	 (is (nil? (previous-sibling dom n1)))
+	 (is (= n2 (next-sibling dom n1)))
+	 (is (= n1 (previous-sibling dom n2)))
+	 (is (= n3 (next-sibling dom n2)))
 	 (is (= n3 (last-child dom root)))
-	 (is (= 2 (count (child-nodes dom root))))))
+	 (is (nil? (next-sibling dom n3)))
+	 (is (= n2 (previous-sibling dom n3)))
+	 (is (= 3 (count (child-nodes dom root))))))
 
      (testing "multiple child nodes"
        (let [dom (-> (create-dom n1) (add-child n1 n2)
@@ -249,6 +256,8 @@
      ))
 					; end test-add-child
 
+ ; end test-mutate-node
+
 (deftest test-export-dom
   (testing "Exporting DOM sub-structure"
     (let [n0 (element-node :root)
@@ -285,14 +294,14 @@
 	)
 
       (testing "Header and footer of exported DOM"
-	(is (= (:comment c1) (:header (export-dom dom n2))))
-	(is (= (:comment c3) (:footer (export-dom dom n2))))
+	(is (= (comment-text c1) (:header (export-dom dom n2))))
+	(is (= (comment-text c3) (:footer (export-dom dom n2))))
 	(is (nil? (:header (export-dom dom n22))))
 	(is (nil? (:footer (export-dom dom n22))))
-	(is (= (:comment c221) (:header (export-dom dom n222))))
+	(is (= (comment-text c221) (:header (export-dom dom n222))))
 	(is (nil? (:footer (export-dom dom n222))))
 	(is (nil? (:header (export-dom dom n52))))
-	(is (= (:comment c53) (:footer (export-dom dom n52))))
+	(is (= (comment-text c53) (:footer (export-dom dom n52))))
 	)
       (testing "Structure of exported DOM"
 	(let [domn2 (export-dom dom n2)]
