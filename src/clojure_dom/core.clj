@@ -5,6 +5,7 @@
 		 (hash-map)
 		 :meta {:doc "Hash-map of {string :string} used for keyword creation optimisation"}))
 
+
 (defn update-keywords
   "Adds a new keyword to the *keywords* map, based on the value of string s. Returns a keyword based on s"
   [s]
@@ -20,13 +21,22 @@
       kw
       (update-keywords s))))
 
+
+
+					; Node types
+(def COMMENT :comment)
+(def TEXT :text)
+(def ELEMENT :element)
+(def XML-NODES #{COMMENT TEXT ELEMENT})
+					; end Node types
+
 (declare text-node comment-node element-node)
 
-(defprotocol Validation
-  "Functions that test node and dom internal consistency"
-  (valid? [x] "Returns true if x is valid. x can be either a Node or Dom."))
+(defprotocol XMLValidation
+  "Functions that test node and dom compatibility with XML"
+  (xml-valid? [x] "Returns true if x is valid. x can be either a Node or Dom."))
 
-(defn verify-attributes
+(defn valid-attributes?
   "Returns true if attribute map is valid - i.e. a map with keyword keys"
   [am]
   (and
@@ -38,52 +48,66 @@
 
 (defprotocol NodeAccessors
   "Reading various Node parameters"
+  (comment? [this] "Returns true if node is of the COMMENT type")
+  (text? [this] "Returns true if node is of the TEXT type")
+  (element? [this] "Returns true if node is of the ELEMENT type")
+
   (comment-text [this] "Returns comment text if node is of the comment type, otherwise nil")
   (text [this] "Returns the text content of the node if the node is of the text type, otherwise nil")
   (element [this] "Returns an element name as a keyword, if node is of an element type, otherwise nil")
+  (value [this] "Returns node value. The value will differ depending on the node type - i.e. sting for TEXT and COMMENT,
+keyword for ELEMENT")
+  
   (attributes [this] "Returns an attributes map if node has attributes, otherwise nil")
   (attribute [this attr] "Returns a value of the attribute, or nil of none")
   ) ; end NodeAccessors
 
-(defprotocol AttributeManagement
-  "Functions that provide 'modification' of the attributes of the element nodes."
+(defprotocol NodeModification
+  "Functions that provide 'modification' of the node parameters. Note that the original node is not affected - a new node is created with modified paramateres."
   (delete-attr [this & attrs] "Returns a new element node with the specified attributes removed from the attributes map.")
   ; change-attr, 
   )
 
 (deftype Node
-    [com txt el attrs]
-  Validation
-  (valid? [this]
-	  (not
-	   (cond
-	    
-	    com
-	    (or txt el attrs (not (string? com)))
-	    
-	    txt
-	    (or com el attrs (not (string? txt)))
-
-	    attrs ; plus element
-	    (or (not el) txt com (not (verify-attributes attrs)))
-	    
-	    el ; no attributes
-	    (or com txt (not (keyword? el)))
-
-	    :default
-	    true ; i.e. not valid
-	    ))) ; end valid?
+    [_type _value _attributes]
+  java.lang.Cloneable
+  (clone [this] (Node. _type _value _attributes))
+  
   NodeAccessors
-  (comment-text [this] com)
-  (text [this] txt)
-  (element [this] el)
-  (attributes [this] attrs)
-  (attribute [this attr] (get attrs attr))
+  (comment? [this] (if (= _type COMMENT) true false))
+  (text? [this] (if (= _type TEXT) true false))
+  (element? [this] (if (= _type ELEMENT) true false))
+  
+  (comment-text [this] (when (comment? this) _value))
+  (text [this] (when (text? this) _value))
+  (element [this] (when (element? this) _value))
+  (value [this] _value)
+  (attributes [this] _attributes)
+  (attribute [this attr] (get _attributes attr))
 
-  AttributeManagement
-  (delete-attr [this & ats]
-	       (let [ at-map (apply dissoc attrs ats)]
-		 (Node. com txt el (if (empty? at-map) nil at-map))))
+  XMLValidation
+  (xml-valid? [this]
+	      
+	      (cond
+	       
+	       (comment? this)
+	       (and (string? _value) (nil? _attributes))
+	       
+	       (text? this)
+	       (and (string? _value) (nil? _attributes))
+
+	       (element? this)
+	       (and (keyword? _value) (or (nil? _attributes) (valid-attributes? _attributes)))
+
+	       :default
+	       false
+	       )) ; end xml-valid?
+
+  NodeModification
+  (delete-attr [this & attrs]
+	       (let [ at-map (apply dissoc _attributes attrs)]
+		 (new Node _type _value (if (empty? at-map) nil at-map))))
+
   ) ; end Node
 
 (defprotocol DomAccess
@@ -106,7 +130,7 @@
  
 					; (insert-before [dom n1 n2] "Returns a new DOM with n2 as the next sibling of n1. If n2 is already part of the DOM structure, it will be moved to a new location. n1 can not be a root node and must belong to the DOM otherwise an exception is thrown. n2 can not be one of the parent nodes of n1.")
   
-  (mutate-node [dom n1 n2] "Returns a new dom with node n1 replaced by a copy of node n2. Instead of using a Node for :text and :comment nodes you can use key-value pairs that describe the node. For example :text 'blah' instead of a text node. n1 must belong to dom. If n1 had children, they will become the children of n2. Note that the n1 and n2 must be of the same type, i.e. you can only mutate text into other text, comment into other comment, otherwise an exception will be thrown. To replace a node by another node type use replace-node. Since n2 will be copied and not used directly, n2 can belong to dom.")
+  (mutate-node [dom n1 n2] "Returns a new dom with node n1 replaced by n2. n1 must belong to the dom, and n2 can not belong to the dom, otherwise an IllegalArgumentException is thrown. If n1 had children, they will become the children of n2. ")
   )
 
 (defprotocol DomComments
@@ -122,16 +146,6 @@
   (export-dom [dom n] "Returns a new DOM with node n as the root. The DOM will contain all the sub-structure unter n. If there are comment nodes around n, they will be used as header and footer source.
 Throws an exception is n is an illegal root node or n does not belong to dom. ")
  )
-
-(defn verify-parent
-  "Returns true if n is a valid parent node - i.e. element node and belongs to the DOM"
-  [dom n]
-  (and
-   (= (class n) Node)
-   (element n)
-   (belongs? dom n)))
-
- 
 
 (defrecord Dom 
     [root ; root node. Must be an element node
@@ -196,18 +210,18 @@ Throws an exception is n is an illegal root node or n does not belong to dom. ")
    (add-child [this np nc]
 	      (cond
 					; check parent node
-	       (not (verify-parent this np))
-	       (throw (Exception. (str np " is not a valid parent node")))
+	       (not (belongs? this np))
+	       (throw (IllegalArgumentException. (str np " is not a part of the DOM")))
 
 					;check child node
 	       (not (instance? Node nc))
-	       (throw (Exception. (str nc " is not a valid child node")))
+	       (throw (IllegalArgumentException. (str nc " is not a Node")))
 
 	       (= np nc)
-	       (throw (Exception. (str "Trying to add " nc " as a child of itself")))
+	       (throw (IllegalArgumentException. (str "Trying to add " nc " as a child of itself")))
 
 	       (ancestor? this nc np)
-	       (throw (Exception. (str nc " is an ancestor of " np)))
+	       (throw (IllegalArgumentException. (str nc " is an ancestor of " np)))
 
 					; both np and nc are ok
 
@@ -235,7 +249,43 @@ Throws an exception is n is an illegal root node or n does not belong to dom. ")
 		      ))
 	       )) ; end add-child
    (mutate-node [dom n1 n2]
-		nil);TODO
+		(cond
+		 ;checks
+		 (not (belongs? dom n1))
+		 (throw (IllegalArgumentException. (str n1 " does not belong to the DOM")))
+
+		 (not (instance? Node n2))
+		 (throw (IllegalArgumentException. (str n2 " is not a Node")))
+		 
+		 (belongs? dom n2)
+		 (throw (IllegalArgumentException. (str n2 " belongs to the DOM")))
+
+		 :default ; checks passed
+		 (let [children (child-nodes dom n1)
+		       p (parent dom n1)
+		       ps (previous-sibling dom n1)
+		       ns (next-sibling dom n1)]
+		   (Dom.
+					; root node
+		    (if (= n1 root) n2 root)
+					; parent-map
+		    (assoc (reduce (fn [m c] (assoc m c n2)) children) n2 p)
+					; first-child-map 
+		    (if (= n1 (first-child dom p)) (assoc first-child-map p n2) first-child-map)
+					; last-child-map  
+		    (if (= n1 (last-child dom p)) (assoc last-child-map p n2) last-child-map)
+					; previous-sibling-map
+		    (dissoc (assoc previous-sibling-map ns n2, n2 ps) n1 nil)
+					; next-sibling-map
+		    (dissoc (assoc next-sibling-map ps n2, n2 ns) n1 nil)
+
+		    (disj (conj nodes-set n2) n1)
+	    
+		   header		       ;header
+		   footer		       ;footer
+		   ))
+		 
+		 ));TODO
   ;TODO
    
    DomExport
@@ -256,39 +306,30 @@ Throws an exception is n is an illegal root node or n does not belong to dom. ")
 		(not (belongs? dom n))
 		(throw (Exception. (str "Trying to export a node " n " that does not belong to DOM.")))
 
-		(or (comment-text n) (text n))
-		(throw (Exception. (str n " is an illegal root node.")))
-
-		;all OK
-		:default
+		:default ; all checks passed
 		(let [ns (exported-nodes-set dom n)
-		      nsn (apply disj nodes-set ns)]
-		 (new Dom
-		      n
-		      (dissoc (apply dissoc parent-map nsn) n)
-		      (apply dissoc first-child-map nsn) ; hash map {parent-node first-child-node}
-		      (apply dissoc last-child-map nsn) ; hash map {parent-node last-child-node}
-		      (dissoc (apply dissoc previous-sibling-map nsn) n) ; hash map {node previous-node}
-		      (dissoc (apply dissoc next-sibling-map nsn) n) ; hash map {node next-node}		      
-		      ns
-		      (comment-text (previous-sibling dom n))
-		      (comment-text (next-sibling dom n))))
-		))
+		      nsn (apply disj nodes-set ns)
+		      prevs (previous-sibling dom n)
+		      nexts (next-sibling dom n)]
+		  (new Dom
+		       n
+		       (dissoc (apply dissoc parent-map nsn) n)
+		       (apply dissoc first-child-map nsn) ; hash map {parent-node first-child-node}
+		       (apply dissoc last-child-map nsn) ; hash map {parent-node last-child-node}
+		       (dissoc (apply dissoc previous-sibling-map nsn) n) ; hash map {node previous-node}
+		       (dissoc (apply dissoc next-sibling-map nsn) n) ; hash map {node next-node}
+		       ns
+		       (when (comment? prevs) (comment-text prevs))
+		       (when (comment? nexts) (comment-text nexts))))		
+		)) ; end export-dom
    ) ; end Dom
 
 
-
-(defn validate-root
-  "Returns true if root node is valid"
-  [n]
-  (and (= (class n) Node)
-       (element n)))
-
 (defn create-dom
   "Creates a DOM ready to be filled with nodes. If you do not supply a root node, a dummy node will be created."
-  ([] (create-dom (Node. nil nil :root nil)))
+  ([] (create-dom (Node. ELEMENT :root nil)))
   ([n]
-   (if (validate-root n)
+   (if (instance? Node n)
     (new Dom
 	 n			       ; root node
 	 {}			       ; parent-map
@@ -302,15 +343,16 @@ Throws an exception is n is an illegal root node or n does not belong to dom. ")
 	 )
     (throw (Exception. (str "Node " n  " is not a valid root node."))))))
 
+
 (defn text-node
   "Returns a text node that contains the given string. "
   [s]
-  (Node. nil (str s)  nil nil))
+  (Node. TEXT (str s)  nil))
 
 (defn comment-node
   "Returns a comment node that contains the given string."
   [s]
-  (Node. (str s) nil nil nil))
+  (Node. COMMENT (str s) nil))
 
 (defn element-node
   "Returns an element node based on the. el is the element name as a keyword or a string. at-map is a map of the attributes.If the resulting element node is not valid, an exception is thrown."
@@ -318,8 +360,8 @@ Throws an exception is n is an illegal root node or n does not belong to dom. ")
   ([el at-map]
      (let [k (if (keyword? el) el (to-keyword el))
 	   am (if (empty? at-map) nil at-map)
-	   n (Node. nil nil k am)]
-       (if (valid? n)
+	   n (Node. ELEMENT k am)]
+       (if (xml-valid? n)
 	 n
 	 (throw (Exception. (str "Invalid element node " n))))))
   ([el atr val & keyvals] (element-node el (conj (hash-map atr val) (apply hash-map keyvals)))))

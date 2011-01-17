@@ -2,52 +2,51 @@
   (:use [clojure-dom.core] :reload-all)
   (:use [clojure.test]))
 
-(deftest test-node-valid?
-  (testing "Node validation"  
-    (testing "valid nodes"
-     (is (valid? (clojure-dom.core.Node. "blah" nil nil nil)))
-     (is (valid? (clojure-dom.core.Node. nil "balh" nil nil)))
-     (is (valid? (clojure-dom.core.Node. nil nil :test nil)))
-     (is (valid? (clojure-dom.core.Node. nil nil :node {:name "blah"}))))
-
-    (testing "invalid nodes"
-      (is (false? (valid? (clojure-dom.core.Node. nil nil nil nil))))
-      (is (false? (valid? (clojure-dom.core.Node. "test" nil :test nil))))
-      (is (false? (valid? (clojure-dom.core.Node. nil "blah" :test nil))))
-      (is (false? (valid? (clojure-dom.core.Node. "balh" "test" nil nil))))
-      (is (false? (valid? (clojure-dom.core.Node. nil nil "element" nil))))
-      (is (false? (valid? (clojure-dom.core.Node. "test" nil nil {:attr "blah"}))))
-      (is (false? (valid? (clojure-dom.core.Node. nil "blah" nil {:attr "blah"}))))
-      (is (false? (valid? (clojure-dom.core.Node. nil nil nil {:attr "blah"}))))
-      (is (false? (valid? (clojure-dom.core.Node. nil nil :test [:attr "bla"]))))
-      (is (false? (valid? (clojure-dom.core.Node. nil nil :element "attributes")))))
-    ))
-					; end test-node-valid?
 
 (deftest test-text-node
   (testing "Creating text nodes"
-    (is (valid? (text-node "blah")))
-    (is (valid? (text-node nil)))
+    (is (xml-valid? (text-node "blah")))
+    (is (xml-valid? (text-node 3)))
+    (is (xml-valid? (text-node nil)))
+    (is (and (text? (text-node "blah"))
+	     (not (comment? (text-node "blah")))
+	     (not (element? (text-node "blah")))))
+    (is (and (text? (text-node nil))
+	     (not (comment? (text-node nil)))
+	     (not (element? (text-node nil)))))
+    (is (and (text? (text-node 3))
+	     (not (comment? (text-node 3)))
+	     (not (element? (text-node 3)))))
     (is (= "blah2" (text (text-node "blah2"))))
     (is (= "3" (text (text-node 3))))
     (is (= "" (text (text-node nil))))))
 
 (deftest test-comment-node
-  (testing "Creating comment nodes"
-    (is (valid? (comment-node "blah")))
-    (is (valid? (comment-node nil)))
+  (testing "Creating text nodes"
+    (is (xml-valid? (comment-node "blah")))
+    (is (xml-valid? (comment-node 3)))
+    (is (xml-valid? (comment-node nil)))
+    (is (and (comment? (comment-node "blah"))
+	     (not (text? (comment-node "blah")))
+	     (not (element? (comment-node "blah")))))
+    (is (and (comment? (comment-node nil))
+	     (not (text? (comment-node nil)))
+	     (not (element? (comment-node nil)))))
+    (is (and (comment? (comment-node 3))
+	     (not (text? (comment-node 3)))
+	     (not (element? (comment-node 3)))))
     (is (= "blah2" (comment-text (comment-node "blah2"))))
-    (is (= "4" (comment-text (comment-node 4))))
+    (is (= "3" (comment-text (comment-node 3))))
     (is (= "" (comment-text (comment-node nil))))))
 
 (deftest test-element-node
   (testing "Creating element nodes"
     (testing "valid nodes"
-      (is (valid? (element-node :test)))
-      (is (valid? (element-node "test" )))
-      (is (valid? (element-node :test nil)))
-      (is (valid? (element-node "test" nil)))
-      (is (valid? (element-node :test {:a "blah"}))))
+      (is (xml-valid? (element-node :test)))
+      (is (xml-valid? (element-node "test" )))
+      (is (xml-valid? (element-node :test nil)))
+      (is (xml-valid? (element-node "test" nil)))
+      (is (xml-valid? (element-node :test {:a "blah"}))))
     (testing "element parameter"
       (is (= :blah (element (element-node :blah))))
       (is (= :blah2 (element (element-node "blah2"))))
@@ -79,7 +78,7 @@
 
 (deftest test-dom-root
   (testing "DOM creation and root node."
-   (let [n1 (clojure-dom.core.Node. nil nil :test nil)
+   (let [n1 (element-node :test nil)
 	 n2 (comment-node "comment")
 	 n3 (text-node "text")]
 
@@ -88,8 +87,6 @@
        (is (belongs? (create-dom n1) n1)))
      
      (testing "illegal root nodes"
-       (is (thrown? Exception (create-dom n2)))
-       (is (thrown? Exception (create-dom n3)))
        (is (thrown? Exception (create-dom nil))))
      )))
 					; end test-dom-root
@@ -287,8 +284,6 @@
 	  ]
       
       (testing "illegal root nodes for export"
-	(is (thrown? Exception (export-dom dom c1))) ; comment node
-	(is (thrown? Exception (export-dom dom t4))) ; text node
 	(is (thrown? Exception (export-dom dom (element-node :node))))
 	; doesn't belong to DOM
 	)
@@ -352,3 +347,21 @@
 	    (is (= n222 (previous-sibling domn2 t223)))
 	    (is (= n222 (next-sibling domn2 c221))))))
       ))) ; end test-export-dom
+
+(deftest test-mutate-node
+  (let [n1 (element-node :root)
+	  c11 (comment-node "c11")
+	  n12 (element-node :n12 :a 1)
+	  t13 (text-node "t13")
+	  n121 (element-node :n121)
+	  n122 (element-node :n122)
+	  dom (-> (create-dom n1)
+		  (add-child n1 c11)(add-child n1 n12)(add-child n1 t13)
+		  (add-child n12 n121)(add-child n12 n122))]
+    (testing "Illegal nodes"
+      (is (thrown? Exception (mutate-node dom (element-node :test) (element-node :blah))))
+      (is false) ; TODO
+      ))
+
+
+  ) ; end test-mutate-node
