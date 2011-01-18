@@ -74,9 +74,9 @@ keyword for ELEMENT")
   (clone [this] (Node. _type _value _attributes))
   
   NodeAccessors
-  (comment? [this] (if (= _type COMMENT) true false))
-  (text? [this] (if (= _type TEXT) true false))
-  (element? [this] (if (= _type ELEMENT) true false))
+  (comment? [this] (= _type COMMENT))
+  (text? [this] (= _type TEXT))
+  (element? [this] (= _type ELEMENT))
   
   (comment-text [this] (when (comment? this) _value))
   (text [this] (when (text? this) _value))
@@ -264,16 +264,28 @@ Throws an exception is n is an illegal root node or n does not belong to dom. ")
 		 (let [children (child-nodes dom n1)
 		       p (parent dom n1)
 		       ps (previous-sibling dom n1)
-		       ns (next-sibling dom n1)]
+		       ns (next-sibling dom n1)
+		       fc (first-child dom n1)
+		       lc (last-child dom n1)]
 		   (Dom.
 					; root node
 		    (if (= n1 root) n2 root)
 					; parent-map
-		    (assoc (reduce (fn [m c] (assoc m c n2)) children) n2 p)
+		    (dissoc
+		     (assoc (reduce (fn [m c] (assoc m c n2)) parent-map children) n2 p)
+		     n1)
 					; first-child-map 
-		    (if (= n1 (first-child dom p)) (assoc first-child-map p n2) first-child-map)
+		    (dissoc
+		     (if (= n1 (first-child dom p))
+		       (assoc first-child-map p n2 , n2 fc)
+		       (assoc first-child-map n2 fc))
+		     n1)
 					; last-child-map  
-		    (if (= n1 (last-child dom p)) (assoc last-child-map p n2) last-child-map)
+		    (dissoc
+		     (if (= n1 (last-child dom p))
+		       (assoc last-child-map p n2 , n2 lc )
+		       (assoc last-child-map n2 lc))
+		     n1)
 					; previous-sibling-map
 		    (dissoc (assoc previous-sibling-map ns n2, n2 ps) n1 nil)
 					; next-sibling-map
