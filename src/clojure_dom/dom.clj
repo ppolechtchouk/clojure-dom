@@ -12,7 +12,7 @@
   (previous-sibling [dom n] "Retuns the next sibling node or nil if none")
   (first-child [dom n] "Returns the first child of the node, or nil if none")
   (last-child [dom n] "Returns the last child of the node, or nil if none")
-  (child-nodes [dom n] "Returns a sequence of the child nodes.")
+  (child-nodes [dom n] "Returns a sequence of the child nodes or nil if node has no children")
   )
 
 (defprotocol DomModification
@@ -68,7 +68,8 @@ Throws an exception is n is an illegal root node or n does not belong to dom. ")
   (last-child [dom n]
 	       (last-child-map n))
   (child-nodes [dom n]
-	       (take-while #(not (nil? %)) (iterate next-sibling-map (first-child-map n))))
+	       (when (first-child-map n)
+		 (take-while #(not (nil? %)) (iterate next-sibling-map (first-child-map n)))))
   DomComments
   (add-header [dom s] (assoc dom :header (if s (str s) nil)))
   (add-footer [dom s] (assoc dom :footer (if s (str s) nil)))

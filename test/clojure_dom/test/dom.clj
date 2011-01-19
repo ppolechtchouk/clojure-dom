@@ -77,6 +77,22 @@
     (is (nil? (:header (add-comments (create-dom) nil "footer"))))
     ))
 
+(deftest test-child-nodes
+  (let [n1 (element-node :root)
+	 n2 (element-node :node)
+	 n3 (element-node :node)
+	 n4 (comment-node "comment")
+	 n5 (text-node "text")
+	dom (-> (create-dom n1) (add-child n1 n2)
+		(add-child n2 n3) (add-child n3 n4) (add-child n3 n5))]
+    (is (= 1 (count (child-nodes dom n1))))
+    (is (= n2 (first (child-nodes dom n1))))
+    (is (= 2 (count (child-nodes dom n3))))
+    (is (= n4 (first (child-nodes dom n3))))
+    (is (= n5 (last (child-nodes dom n3))))
+    (is (nil? (child-nodes dom n5)))    
+    ))
+
 (deftest test-add-child
   (testing "add-child function"
    (let [n1 (element-node :root)
@@ -182,7 +198,6 @@
      ))
 					; end test-add-child
 
- ; end test-mutate-node
 
 (deftest test-export-dom
   (testing "Exporting DOM sub-structure"
